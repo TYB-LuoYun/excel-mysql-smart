@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.anets.module.excel.mapper.ExcelMysqlMapper">
+
+        <!-- 通用查询映射结果 -->
+        <resultMap id="BaseResultMap" type="top.anets.module.excel.entity.ExcelMysql">
+                    <id column="id" property="id"/>
+                    <result column="table_name" property="tableName"/>
+                    <result column="excel_name" property="excelName"/>
+                    <result column="excel_head_row_num" property="excelHeadRowNum"/>
+                    <result column="sheet_name" property="sheetName"/>
+                    <result column="sheet_index" property="sheetIndex"/>
+                    <result column="if_map" property="ifMap"/>
+                    <result column="field_map" property="fieldMap"/>
+                    <result column="create_time" property="createTime"/>
+                    <result column="update_time" property="updateTime"/>
+                    <result column="delete_flag" property="deleteFlag"/>
+        </resultMap>
+
+        <!-- 通用查询结果列 -->
+        <sql id="Base_Column_List">
+            id, table_name, excel_name, excel_head_row_num, sheet_name, sheet_index, if_map, field_map, create_time, update_time, delete_flag
+        </sql>
+
+
+        <select id="listTable" resultType="java.util.Map" >
+            select * from ${table} limit #{start},#{size}
+        </select>
+     <select id="countTable" resultType="java.lang.Long">
+         select count(*) from ${table}
+     </select>
+
+
+
+
+
+
+</mapper>
