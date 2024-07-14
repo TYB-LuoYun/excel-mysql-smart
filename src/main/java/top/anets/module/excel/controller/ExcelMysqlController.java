@@ -7,8 +7,8 @@ import com.alibaba.excel.read.builder.ExcelReaderBuilder;
 import com.alibaba.excel.read.metadata.ReadSheet;
 import com.alibaba.excel.util.StringUtils;
 import com.alibaba.fastjson.JSONObject;
-import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import org.springframework.util.CollectionUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -174,6 +174,9 @@ public class ExcelMysqlController {
         boolean b = lock.tryLock();
         if(!b){
             throw new ServiceException("正在执行中，请稍后");
+        }
+        if(CollectionUtils.isEmpty(fieldMap)){
+            throw new ServiceException("字段映射不能为空");
         }
         try{
             if(sheetIndex == null){
