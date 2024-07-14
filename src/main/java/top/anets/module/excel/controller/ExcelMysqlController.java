@@ -99,6 +99,13 @@ public class ExcelMysqlController {
 
     @RequestMapping("newExcelTable")
     public void newExcelTable(@RequestBody ExcelMysqlVo excelMysqlVo)  {
+        /**
+         * 查询表名是否存在
+         */
+        long count = excelMysqlService.count(Wrappers.<ExcelMysql>lambdaQuery().eq(ExcelMysql::getTableName, excelMysqlVo.getTableName().trim()));
+        if(count>0){
+            throw new ServiceException("表已存在");
+        }
         excelMysqlService.newExcelTable(excelMysqlVo);
     }
 
@@ -114,13 +121,7 @@ public class ExcelMysqlController {
         if(!tableName.startsWith("e_")){
             tableName = "e_"+tableName;
         }
-        /**
-         * 查询表名是否存在
-         */
-        long count = excelMysqlService.count(Wrappers.<ExcelMysql>lambdaQuery().eq(ExcelMysql::getTableName, tableName));
-        if(count>0){
-            throw new ServiceException("表已存在");
-        }
+
         if(headRowNumber == null){
             headRowNumber = 1;
         }
