@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import top.anets.exception.ServiceException;
 import top.anets.module.excel.controller.ReadMergeAsMapListener;
 import top.anets.module.excel.mapper.TableMapper;
+import top.anets.utils.BathUtil;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,8 +31,12 @@ public class TableServiceImpl implements TableService{
     public void uploadExcelData(Map<Integer, String> headDataMap, List<Map<Integer, Object>> dataList,String tableName,Map<String,String> fieldMap) {
 //      先清空表
         tableMapper.excuteSql("delete from `"+tableName+"`");
-        String sql = genTableUpdateSql(headDataMap , dataList,  tableName,fieldMap );
-        tableMapper.excuteSql(sql);
+        List<List<Map<Integer, Object>>> lists = BathUtil.pagingList(dataList, 2000);
+        for(List<Map<Integer, Object>> item  : lists){
+            String sql = genTableUpdateSql(headDataMap , item,  tableName,fieldMap );
+            tableMapper.excuteSql(sql);
+        }
+
     }
 
     @Override
@@ -45,14 +50,10 @@ public class TableServiceImpl implements TableService{
         return tableMapper.selectTableColumn(tableName,tableSchema );
     }
 
-    public ReentrantLock  lock = new ReentrantLock();
+
 
     public void updateExcelTable(MultipartFile file,String tableName, Integer headRowNumber,Integer sheetIndex, Map fieldMap) throws IOException {
-        boolean b = lock.tryLock();
-        if(!b){
-            throw new ServiceException("正在执行中，请稍后");
-        }
-        try {
+
             if(StringUtils.isBlank(tableName)){
                 tableName = getSimpleNameFromFile(file.getOriginalFilename());
             }
@@ -112,18 +113,17 @@ public class TableServiceImpl implements TableService{
                 }
             }
 
+//          校验字段是否重复
+            Collection values = fieldMap.values();
+            Set<?> set = new HashSet<>(values);
+            if(set.size()< values.size()){
+                throw new ServiceException("列名重复，请检查");
+            }
             this.uploadExcelData(headDataMap,readMergeAsMapListener.getDataList(),tableName,fieldMap);
-        }catch (Exception e){
-            e.printStackTrace();
-            throw new ServiceException(e.getMessage());
-        }finally {
-            lock.unlock();
-        }
-
 
     }
 
-    public void createExcelTable(MultipartFile file, String tableName, Integer headRowNumber,Integer sheetIndex) throws IOException {
+    public void createExcelTable(MultipartFile file, String tableName, Integer headRowNumber,Integer sheetIndex)   {
 
         ReadMergeAsMapListener readMergeAsMapListener = new ReadMergeAsMapListener();
         try(InputStream in = file.getInputStream()){
@@ -136,6 +136,12 @@ public class TableServiceImpl implements TableService{
         }
     }
 
+    @Override
+    public void newTableByFieldMap(LinkedHashMap<String, String> fieldMap, String tableName) {
+        String sql = genTableCreateSql(fieldMap,tableName);
+        tableMapper.excuteSql(sql);
+    }
+
 
     public String getSimpleNameFromFile(String OriginalFilename){
         return  OriginalFilename.substring(0,OriginalFilename.lastIndexOf(".")).replaceAll("\\s+", "");
@@ -143,14 +149,16 @@ public class TableServiceImpl implements TableService{
     }
 
 
-    private String genTableCreateSql(Map<Integer, String> field,String tableName) {
+
+
+    private String genTableCreateSql(Map  field,String tableName) {
         String sql ="CREATE TABLE `"+tableName+"` ("  ;
         // 将 LinkedHashMap 的条目存储到 List 中
-        List<Map.Entry<Integer, String>> entryList = new ArrayList<>(field.entrySet());
+        List<Map.Entry> entryList = new ArrayList<>(field.entrySet());
         // 按照索引遍历 LinkedHashMap
         for (int i = 0; i < entryList.size(); i++) {
-            Map.Entry<Integer,String> entry = entryList.get(i);
-            sql+="`"+entry.getValue()+"` varchar(255) DEFAULT ''";
+            Map.Entry  entry = entryList.get(i);
+            sql+="`"+entry.getValue().toString().trim()+"` varchar(255) DEFAULT ''";
             if(i !=entryList.size() -1){
                 sql+=",";
             }
@@ -198,7 +206,7 @@ public class TableServiceImpl implements TableService{
             }
             for (Map.Entry<Integer, Object> entry : row.entrySet()) {
                 if( entry.getValue()!=null){
-                    sql.append("'"+entry.getValue().toString().trim()+"'");
+                    sql.append("\""+entry.getValue().toString().trim().replaceAll("\"", "\\\\\"")+"\"");
                 }else{
                     sql.append("''");
                 }

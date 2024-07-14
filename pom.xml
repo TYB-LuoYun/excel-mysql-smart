@@ -129,8 +129,12 @@
             <artifactId>springfox-swagger2</artifactId>
             <version>2.7.0</version>
         </dependency>
-
-
+        <!-- https://mvnrepository.com/artifact/commons-io/commons-io -->
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.13.0</version>
+        </dependency>
         <!-- feign 调用服务接口 -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
@@ -148,7 +152,7 @@
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>easyexcel</artifactId>
-            <version>3.1.1</version>
+            <version>4.0.1</version>
         </dependency>
 
 

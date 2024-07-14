@@ -1,14 +1,18 @@
 package top.anets.module.excel.controller;
 
+import com.alibaba.excel.ExcelReader;
 import com.alibaba.excel.context.AnalysisContext;
 import com.alibaba.excel.enums.CellExtraTypeEnum;
 import com.alibaba.excel.event.AnalysisEventListener;
+import com.alibaba.excel.exception.ExcelAnalysisStopException;
 import com.alibaba.excel.metadata.CellExtra;
 import com.alibaba.excel.metadata.data.ReadCellData;
 import com.alibaba.excel.util.StringUtils;
 import lombok.Data;
+import top.anets.exception.ServiceException;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Data
 public class ReadMergeAsMapListener extends AnalysisEventListener<Map<Integer, Object>> {
@@ -17,6 +21,8 @@ public class ReadMergeAsMapListener extends AnalysisEventListener<Map<Integer, O
     private final List<CellExtra> extraList = new ArrayList<CellExtra>();
     private final List<Map<Integer, Object>> headList = new ArrayList<Map<Integer, Object>>();
     private int headRowCount = 0;
+    private Integer limitRow = null;
+    private AtomicInteger countReaded =  new AtomicInteger(0);
 
     @Override
     public void invokeHead(Map<Integer, ReadCellData<?>> headMap, AnalysisContext context) {
@@ -32,12 +38,20 @@ public class ReadMergeAsMapListener extends AnalysisEventListener<Map<Integer, O
         headList.add(map);
         // 记录表头行数
         headRowCount++;
+        countReaded.incrementAndGet();
     }
 
 
     public void invoke(Map<Integer, Object> data, AnalysisContext context) {
+        if(limitRow!=null&&limitRow<=countReaded.get()){
+            this.doAfterAllAnalysed(null);
+            throw new ExcelAnalysisStopException("停止读取");
+        }
         dataList.add(data);
+        countReaded.incrementAndGet();
+
     }
+
 
     public void extra(CellExtra extra, AnalysisContext context) {
         CellExtraTypeEnum type = extra.getType();
@@ -85,6 +99,11 @@ public class ReadMergeAsMapListener extends AnalysisEventListener<Map<Integer, O
 //      合并内容
         fillDataListByMerge(dataList,extraList,headRowCount);
     }
+
+
+
+
+
 
 
 

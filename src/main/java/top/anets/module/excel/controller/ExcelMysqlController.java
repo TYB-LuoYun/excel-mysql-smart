@@ -1,10 +1,13 @@
 package top.anets.module.excel.controller;
 
 import com.alibaba.excel.EasyExcel;
+import com.alibaba.excel.ExcelReader;
 import com.alibaba.excel.enums.CellExtraTypeEnum;
+import com.alibaba.excel.read.builder.ExcelReaderBuilder;
 import com.alibaba.excel.read.metadata.ReadSheet;
 import com.alibaba.excel.util.StringUtils;
 import com.alibaba.fastjson.JSONObject;
+import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +29,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
 import javax.annotation.Resource;
 import javax.validation.constraints.NotNull;
@@ -93,30 +97,107 @@ public class ExcelMysqlController {
     }
 
 
+    @RequestMapping("newExcelTable")
+    public void newExcelTable(@RequestBody ExcelMysqlVo excelMysqlVo)  {
+        excelMysqlService.newExcelTable(excelMysqlVo);
+    }
+
+
+    @RequestMapping("previewCreateTable")
+    public Object previewCreateTable(MultipartFile file,String tableName,Integer headRowNumber,Integer sheetIndex)  {
+        if(StringUtils.isBlank(tableName)){
+            tableName = tableService.getSimpleNameFromFile(file.getOriginalFilename());
+        }
+        if(sheetIndex == null){
+            sheetIndex = 0;
+        }
+        if(!tableName.startsWith("e_")){
+            tableName = "e_"+tableName;
+        }
+        /**
+         * 查询表名是否存在
+         */
+        long count = excelMysqlService.count(Wrappers.<ExcelMysql>lambdaQuery().eq(ExcelMysql::getTableName, tableName));
+        if(count>0){
+            throw new ServiceException("表已存在");
+        }
+        if(headRowNumber == null){
+            headRowNumber = 1;
+        }
+        ReadMergeAsMapListener readMergeAsMapListener = new ReadMergeAsMapListener();
+        readMergeAsMapListener.setLimitRow(headRowNumber);
+        List<ReadSheet> sheets = null;
+        try(InputStream in = file.getInputStream()){
+            try(ExcelReader excelReader = EasyExcel.read(in, readMergeAsMapListener).extraRead(CellExtraTypeEnum.MERGE).build();){
+                //            excelReader.finish();
+                sheets = excelReader.excelExecutor().sheetList();
+                // 构建一个sheet 这里可以指定名字或者no
+                ReadSheet readSheet = EasyExcel.readSheet(sheetIndex).headRowNumber(headRowNumber).build();
+                // 读取一个sheet
+                excelReader.read(readSheet);
+                // 这里千万别忘记关闭，读的时候会创建临时文件，到时磁盘会崩的,有close了就不用管
+//                excelReader.finish();
+            }
+        }catch (Exception e){
+            e.printStackTrace();
+            throw new ServiceException(e.getMessage());
+        }
+
+        /**
+         * 获取字段映射
+         */
+        Map<Integer, String> headDataMap = readMergeAsMapListener.getHeadDataMap();
+        LinkedHashMap<String, String> linkedHashMap = new LinkedHashMap<>();
+        for(Map.Entry<Integer,String> item : headDataMap.entrySet()){
+            if(StringUtils.isNotBlank(item.getValue())){
+                linkedHashMap.put(item.getValue(), item.getValue());
+            }
+        }
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put("tableName", tableName);
+        jsonObject.put("sheetIndex", sheetIndex);
+        jsonObject.put("excelHeadRowNum", headRowNumber);
+        jsonObject.put("sheets",sheets  );
+        jsonObject.put("fieldMap", linkedHashMap );
+        return jsonObject;
+    }
+
 
     /**
      * 更新数据
      * @return
      */
+    public ReentrantLock lock = new ReentrantLock();
     @RequestMapping("updateExcelTable")
     public void updateExcelTable(MultipartFile file,Integer id,Integer sheetIndex,String updateBy,@RequestPart(name = "fieldMap")  Map<String,String> fieldMap) throws IOException {
-        if(sheetIndex == null){
-            sheetIndex = 0;
+        boolean b = lock.tryLock();
+        if(!b){
+            throw new ServiceException("正在执行中，请稍后");
         }
-        ReadSheet sheet = null;
-        try (InputStream in = file.getInputStream()){
-            sheet = EasyExcel.read(in).build().excelExecutor().sheetList().get(sheetIndex);
+        try{
+            if(sheetIndex == null){
+                sheetIndex = 0;
+            }
+            ReadSheet sheet = null;
+            try (InputStream in = file.getInputStream()){
+                sheet = EasyExcel.read(in).build().excelExecutor().sheetList().get(sheetIndex);
+            }catch (Exception e){
+                throw new ServiceException(e.getMessage());
+            }
+            ExcelMysql byId = excelMysqlService.getById(id);
+            tableService.updateExcelTable(file,byId.getTableName(),byId.getExcelHeadRowNum(),sheetIndex,fieldMap);
+            byId.setUpdateTime(new Date());
+            byId.setExcelName(file.getOriginalFilename());
+            byId.setSheetIndex(sheetIndex);
+            byId.setSheetName(sheet.getSheetName());
+            byId.setUpdateBy(updateBy);
+            excelMysqlService.saveOrUpdate(byId);
         }catch (Exception e){
+            e.printStackTrace();
             throw new ServiceException(e.getMessage());
+        }finally {
+            lock.unlock();
         }
-        ExcelMysql byId = excelMysqlService.getById(id);
-        tableService.updateExcelTable(file,byId.getTableName(),byId.getExcelHeadRowNum(),sheetIndex,fieldMap);
-        byId.setUpdateTime(new Date());
-        byId.setExcelName(file.getOriginalFilename());
-        byId.setSheetIndex(sheetIndex);
-        byId.setSheetName(sheet.getSheetName());
-        byId.setUpdateBy(updateBy);
-        excelMysqlService.saveOrUpdate(byId);
     }
 
 
@@ -126,15 +207,22 @@ public class ExcelMysqlController {
      * @return
      */
     @RequestMapping("getSheets")
-    public Object getSheet(MultipartFile file ) throws IOException {
+    public Object getSheet(MultipartFile file ) {
         List<ReadSheet> readSheets = null;
         try (InputStream in = file.getInputStream()){
-            readSheets = EasyExcel.read(in).build().excelExecutor().sheetList();
+            ReadMergeAsMapListener readMergeAsMapListener = new ReadMergeAsMapListener();
+            readMergeAsMapListener.setLimitRow(0);
+            try(ExcelReader excelReader = EasyExcel.read(in).build()){
+                readSheets = excelReader.excelExecutor().sheetList();
+            }
         }catch (Exception e){
+            e.printStackTrace();
             throw new ServiceException(e.getMessage());
         }
         return readSheets;
     }
+
+
 
 
     /**
@@ -143,10 +231,11 @@ public class ExcelMysqlController {
      * @return
      */
     @RequestMapping("getFieldMap")
-    public Object getFieldMap(MultipartFile file , @NotNull Integer id, @NotNull  Integer sheetIndex) throws IOException {
+    public Object getFieldMap(MultipartFile file , @NotNull Integer id, @NotNull  Integer sheetIndex)  {
         ExcelMysql byId = excelMysqlService.getById(id);
         Map<Integer, String> headDataMap = null;
         ReadMergeAsMapListener readMergeAsMapListener = new ReadMergeAsMapListener();
+        readMergeAsMapListener.setLimitRow(byId.getExcelHeadRowNum());
         try(InputStream in = file.getInputStream()){
             EasyExcel.read(in).extraRead(CellExtraTypeEnum.MERGE).registerReadListener(readMergeAsMapListener).sheet(sheetIndex).headRowNumber(byId.getExcelHeadRowNum()).doRead();
             headDataMap = readMergeAsMapListener.getHeadDataMap();
