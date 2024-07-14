@@ -171,12 +171,12 @@ public class ExcelMysqlController {
     public ReentrantLock lock = new ReentrantLock();
     @RequestMapping("updateExcelTable")
     public void updateExcelTable(MultipartFile file,Integer id,Integer sheetIndex,String updateBy,@RequestPart(name = "fieldMap")  Map<String,String> fieldMap) throws IOException {
+        if(CollectionUtils.isEmpty(fieldMap)){
+            throw new ServiceException("字段映射不能为空");
+        }
         boolean b = lock.tryLock();
         if(!b){
             throw new ServiceException("正在执行中，请稍后");
-        }
-        if(CollectionUtils.isEmpty(fieldMap)){
-            throw new ServiceException("字段映射不能为空");
         }
         try{
             if(sheetIndex == null){
