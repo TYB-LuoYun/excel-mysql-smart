@@ -8,6 +8,7 @@ import com.alibaba.excel.read.metadata.ReadSheet;
 import com.alibaba.excel.util.StringUtils;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.springframework.util.CollectionUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -85,6 +86,7 @@ public class ExcelMysqlController {
         if(headRowNumber == null){
             headRowNumber = 1;
         }
+        ZipSecureFile.setMaxFileCount(20000);
         tableService.createExcelTable(file,tableName,headRowNumber,sheetIndex);
         ExcelMysql excelMysql = new ExcelMysql();
         excelMysql.setTableName(tableName);
@@ -125,6 +127,7 @@ public class ExcelMysqlController {
         if(headRowNumber == null){
             headRowNumber = 1;
         }
+        ZipSecureFile.setMaxFileCount(20000);
         ReadMergeAsMapListener readMergeAsMapListener = new ReadMergeAsMapListener();
         readMergeAsMapListener.setLimitRow(headRowNumber);
         List<ReadSheet> sheets = null;
@@ -170,7 +173,7 @@ public class ExcelMysqlController {
      */
     public ReentrantLock lock = new ReentrantLock();
     @RequestMapping("updateExcelTable")
-    public void updateExcelTable(MultipartFile file,Integer id,Integer sheetIndex,String updateBy,@RequestPart(name = "fieldMap")  Map<String,String> fieldMap) throws IOException {
+    public void updateExcelTable(MultipartFile file,Integer id,Integer sheetIndex,Integer excelHeadRowNum,String updateBy,@RequestPart(name = "fieldMap")  Map<String,String> fieldMap,@RequestPart(name = "keys")  Map<String,Long> keys,Integer mode) throws IOException {
         if(CollectionUtils.isEmpty(fieldMap)){
             throw new ServiceException("字段映射不能为空");
         }
@@ -179,17 +182,32 @@ public class ExcelMysqlController {
             throw new ServiceException("正在执行中，请稍后");
         }
         try{
+            ExcelMysql byId = excelMysqlService.getById(id);
+            try {
+                if(mode==null||mode!=1){
+                    tableService.deleteTableData(byId.getTableName());
+                }
+//              为了能加索引，最好先删除表
+                tableService.updatePK(keys,byId.getTableName());
+            }catch (Exception e){
+                e.printStackTrace();
+                throw  new ServiceException("修改索引失败，可能数据存在索引不唯一，建议选用覆盖模式");
+            }
             if(sheetIndex == null){
                 sheetIndex = 0;
             }
+            ZipSecureFile.setMaxFileCount(20000);
             ReadSheet sheet = null;
             try (InputStream in = file.getInputStream()){
                 sheet = EasyExcel.read(in).build().excelExecutor().sheetList().get(sheetIndex);
             }catch (Exception e){
                 throw new ServiceException(e.getMessage());
             }
-            ExcelMysql byId = excelMysqlService.getById(id);
-            tableService.updateExcelTable(file,byId.getTableName(),byId.getExcelHeadRowNum(),sheetIndex,fieldMap);
+
+            if(excelHeadRowNum!=null){
+                byId.setExcelHeadRowNum(excelHeadRowNum);
+            }
+            tableService.updateExcelTable(file,byId.getTableName(),byId.getExcelHeadRowNum(),sheetIndex,fieldMap,mode);
             byId.setUpdateTime(new Date());
             byId.setExcelName(file.getOriginalFilename());
             byId.setSheetIndex(sheetIndex);
@@ -216,6 +234,7 @@ public class ExcelMysqlController {
         try (InputStream in = file.getInputStream()){
             ReadMergeAsMapListener readMergeAsMapListener = new ReadMergeAsMapListener();
             readMergeAsMapListener.setLimitRow(0);
+            ZipSecureFile.setMaxFileCount(20000);
             try(ExcelReader excelReader = EasyExcel.read(in).build()){
                 readSheets = excelReader.excelExecutor().sheetList();
             }
@@ -235,13 +254,21 @@ public class ExcelMysqlController {
      * @return
      */
     @RequestMapping("getFieldMap")
-    public Object getFieldMap(MultipartFile file , @NotNull Integer id, @NotNull  Integer sheetIndex)  {
+    public Object getFieldMap(MultipartFile file , @NotNull Integer id, @NotNull  Integer sheetIndex,Integer excelHeadRowNum)  {
         ExcelMysql byId = excelMysqlService.getById(id);
         Map<Integer, String> headDataMap = null;
+        /**
+         * 查看表主键
+         */
+        Map<String,Long> keys =tableService.listPK(byId.getTableName());
         ReadMergeAsMapListener readMergeAsMapListener = new ReadMergeAsMapListener();
-        readMergeAsMapListener.setLimitRow(byId.getExcelHeadRowNum());
+        if(excelHeadRowNum == null){
+            excelHeadRowNum = byId.getExcelHeadRowNum();
+        }
+        readMergeAsMapListener.setLimitRow(excelHeadRowNum);
+        ZipSecureFile.setMaxFileCount(20000);
         try(InputStream in = file.getInputStream()){
-            EasyExcel.read(in).extraRead(CellExtraTypeEnum.MERGE).registerReadListener(readMergeAsMapListener).sheet(sheetIndex).headRowNumber(byId.getExcelHeadRowNum()).doRead();
+            EasyExcel.read(in).extraRead(CellExtraTypeEnum.MERGE).registerReadListener(readMergeAsMapListener).sheet(sheetIndex).headRowNumber(excelHeadRowNum).doRead();
             headDataMap = readMergeAsMapListener.getHeadDataMap();
         }catch (Exception e){
             e.printStackTrace();
@@ -274,6 +301,9 @@ public class ExcelMysqlController {
         JSONObject object = new JSONObject();
         object.put("columns",list);
         object.put("fieldMap",linkedHashMap);
+        object.put("tableName",byId.getTableName());
+        object.put("excelHeadRowNum",excelHeadRowNum);
+        object.put("keys",keys);
         return object;
     }
 

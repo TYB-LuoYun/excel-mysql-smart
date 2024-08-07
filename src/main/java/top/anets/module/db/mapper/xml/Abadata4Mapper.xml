@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.anets.module.db.mapper.Abadata4Mapper">
+
+        <!-- 通用查询映射结果 -->
+        <resultMap id="BaseResultMap" type="top.anets.module.db.entity.Abadata4">
+                    <id column="id" property="id"/>
+                    <result column="搜索词" property="搜索词"/>
+                    <result column="搜索频率排名" property="搜索频率排名"/>
+                    <result column="日期范围" property="日期范围"/>
+                    <result column="站点" property="站点"/>
+                    <result column="#1 已点击的 ASIN" property="#1 已点击的 ASIN"/>
+                    <result column="#2 已点击的 ASIN" property="#2 已点击的 ASIN"/>
+                    <result column="#3 已点击的 ASIN" property="#3 已点击的 ASIN"/>
+                    <result column="#1 点击共享" property="#1 点击共享"/>
+                    <result column="#2 点击共享" property="#2 点击共享"/>
+                    <result column="#3 点击共享" property="#3 点击共享"/>
+                    <result column="#1 转化共享" property="#1 转化共享"/>
+                    <result column="#2 转化共享" property="#2 转化共享"/>
+                    <result column="#3 转化共享" property="#3 转化共享"/>
+                    <result column="1品牌" property="1品牌"/>
+                    <result column="2品牌" property="2品牌"/>
+                    <result column="3品牌" property="3品牌"/>
+                    <result column="1颜色" property="1颜色"/>
+                    <result column="2颜色" property="2颜色"/>
+                    <result column="3颜色" property="3颜色"/>
+                    <result column="1尺寸" property="1尺寸"/>
+                    <result column="2尺寸" property="2尺寸"/>
+                    <result column="3尺寸" property="3尺寸"/>
+                    <result column="cnWord" property="cnWord"/>
+        </resultMap>
+
+        <!-- 通用查询结果列 -->
+        <sql id="Base_Column_List">
+            搜索词, 搜索频率排名, 日期范围, 站点, #1 已点击的 ASIN, #2 已点击的 ASIN, #3 已点击的 ASIN, #1 点击共享, #2 点击共享, #3 点击共享, #1 转化共享, #2 转化共享, #3 转化共享, 1品牌, 2品牌, 3品牌, 1颜色, 2颜色, 3颜色, 1尺寸, 2尺寸, 3尺寸, cnWord, id
+        </sql>
+
+
+
+
+
+
+</mapper>

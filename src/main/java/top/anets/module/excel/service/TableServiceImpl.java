@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 import static io.netty.util.internal.SystemPropertyUtil.contains;
 
@@ -28,15 +29,23 @@ public class TableServiceImpl implements TableService{
     @Autowired
     private TableMapper tableMapper;
     @Override
-    public void uploadExcelData(Map<Integer, String> headDataMap, List<Map<Integer, Object>> dataList,String tableName,Map<String,String> fieldMap) {
-//      先清空表
-        tableMapper.excuteSql("delete from `"+tableName+"`");
+    public void uploadExcelData(Map<Integer, String> headDataMap, List<Map<Integer, Object>> dataList,String tableName,Map<String,String> fieldMap,Integer mode) {
+        if(mode==null||mode!=1){
+            //      先清空表
+            tableMapper.excuteSql("delete from `"+tableName+"`");
+        }
+
         List<List<Map<Integer, Object>>> lists = BathUtil.pagingList(dataList, 2000);
         for(List<Map<Integer, Object>> item  : lists){
             String sql = genTableUpdateSql(headDataMap , item,  tableName,fieldMap );
             tableMapper.excuteSql(sql);
         }
 
+    }
+
+    @Override
+    public void deleteTableData(String tableName) {
+        tableMapper.excuteSql("delete from `"+tableName+"`");
     }
 
     @Override
@@ -52,7 +61,7 @@ public class TableServiceImpl implements TableService{
 
 
 
-    public void updateExcelTable(MultipartFile file,String tableName, Integer headRowNumber,Integer sheetIndex, Map fieldMap) throws IOException {
+    public void updateExcelTable(MultipartFile file,String tableName, Integer headRowNumber,Integer sheetIndex, Map fieldMap,Integer mode) throws IOException {
 
             if(StringUtils.isBlank(tableName)){
                 tableName = getSimpleNameFromFile(file.getOriginalFilename());
@@ -71,8 +80,10 @@ public class TableServiceImpl implements TableService{
             }
 
             Map<Integer, String> headDataMap = readMergeAsMapListener.getHeadDataMap();
+
             if(CollectionUtils.isEmpty(fieldMap)){
                 Iterator<Map.Entry<Integer, String>> iterator = headDataMap.entrySet().iterator();
+                Set<String> valueSet = new HashSet<>();
                 while (iterator.hasNext()) {
                     boolean isFind = false;
                     Map.Entry<Integer, String> item = iterator.next();
@@ -82,6 +93,11 @@ public class TableServiceImpl implements TableService{
                     if(!isFind){
                         iterator.remove(); // 安全地移除元素
                     }
+
+                    if(valueSet.contains(item.getValue())){
+                        iterator.remove(); // 安全地移除重复值元素
+                    }
+                    valueSet.add(item.getValue());
                 }
             }else{
 //               去掉字段映射的空元素
@@ -94,11 +110,17 @@ public class TableServiceImpl implements TableService{
                 }
                 Set set = fieldMap.keySet();
                 Iterator<Map.Entry<Integer, String>> iterator = headDataMap.entrySet().iterator();
+
+                Set<String> valueSet = new HashSet<>();
                 while (iterator.hasNext()) {
                     Map.Entry<Integer, String> item = iterator.next();
                     if(!set.contains(item.getValue())){
                         iterator.remove(); // 安全地移除元素
                     }
+                    if(valueSet.contains(item.getValue())){
+                        iterator.remove(); // 安全地移除重复值元素
+                    }
+                    valueSet.add(item.getValue());
                 }
             }
 
@@ -119,7 +141,7 @@ public class TableServiceImpl implements TableService{
             if(set.size()< values.size()){
                 throw new ServiceException("列名重复，请检查");
             }
-            this.uploadExcelData(headDataMap,readMergeAsMapListener.getDataList(),tableName,fieldMap);
+            this.uploadExcelData(headDataMap,readMergeAsMapListener.getDataList(),tableName,fieldMap,mode);
 
     }
 
@@ -140,6 +162,51 @@ public class TableServiceImpl implements TableService{
     public void newTableByFieldMap(LinkedHashMap<String, String> fieldMap, String tableName) {
         String sql = genTableCreateSql(fieldMap,tableName);
         tableMapper.excuteSql(sql);
+    }
+
+    @Override
+    public  Map<String, Long> listPK(String tableName) {
+        List<Map<String,Object>>   list = tableMapper.listPK(tableName);
+        HashMap<String, Long> map = new HashMap<>();
+
+        if(list!=null){
+            list.stream().forEach(e->{
+                map.put((String)e.get("Column_name"),(Long) e.get("Seq_in_index"));
+            });
+        }
+        return  map;
+
+    }
+
+    @Override
+    public void updatePK(Map<String, Long> keys, String tableName) {
+        Map<String, Long> longMap = this.listPK(tableName);
+        if(CollectionUtils.isEmpty(keys)&&CollectionUtils.isEmpty(longMap)){
+            return;
+        }
+
+        if (keys.keySet().containsAll(longMap.keySet()) && longMap.keySet().containsAll(keys.keySet())) {
+            return;
+        } else {
+            if(!CollectionUtils.isEmpty(longMap)){
+                tableMapper.excuteSql("ALTER TABLE `"+tableName+"` drop primary key");
+            }
+            if(!CollectionUtils.isEmpty(keys)){
+                String sql ="(";
+                ArrayList<String> strings = new ArrayList<>(keys.keySet());
+                for(int i=0;i<strings.size();i++){
+                    sql += "`"+strings.get(i)+"`";
+                    if(i<strings.size()-1){
+                        sql+=",";
+                    }
+                }
+                sql+=")";
+                tableMapper.excuteSql("ALTER TABLE `"+tableName+"` ADD PRIMARY KEY "+sql);
+            }
+        }
+
+
+
     }
 
 
@@ -173,7 +240,7 @@ public class TableServiceImpl implements TableService{
     private String genTableUpdateSql(Map<Integer, String> headDataMap, List<Map<Integer, Object>> dataList,String tableName,Map<String,String> fieldMap) {
 //        String sqls ="INSERT INTO tableName (column1, column2, ...) VALUES (value1a, value2a, ...), (value1b, value2b, ...), ...;";
         StringBuilder sql = new StringBuilder();
-        sql.append("INSERT INTO `"+tableName+"` (");
+        sql.append("REPLACE INTO `"+tableName+"` (");
         int count =0;
         if(CollectionUtils.isEmpty(fieldMap)){
             for (Map.Entry<Integer, String> entry : headDataMap.entrySet()) {
@@ -200,7 +267,8 @@ public class TableServiceImpl implements TableService{
             if(row.size()<headDataMap.size()){
                 List<Integer> keys = new ArrayList<>(row.keySet());
                 Integer lastKey = keys.get(keys.size() - 1);
-                for(int j=1;j<=headDataMap.size()-row.size();j++){
+                Integer orginSize = row.size();
+                for(int j=1;j<=headDataMap.size()-orginSize;j++){
                     row.put(lastKey+j,"");
                 }
             }

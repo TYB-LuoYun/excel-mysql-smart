@@ -17,4 +17,6 @@ public interface TableMapper {
      List< String  > selectTableColumn( @Param("tableName") String tableName ,@Param("tableSchema") String tableSchema);
     List< String  > countTable ( @Param("tableName") String tableName);
 
+    @Select("SHOW KEYS FROM `${tableName}` WHERE Key_name = 'PRIMARY'")
+    List<Map<String, Object>> listPK(@Param("tableName")String tableName);
 }

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.anets.module.db.mapper.AbaDataMapper">
+
+        <!-- 通用查询映射结果 -->
+        <resultMap id="BaseResultMap" type="top.anets.module.db.entity.AbaData">
+                    <id column="id" property="id"/>
+                    <result column="search_terms" property="searchTerms"/>
+                    <result column="search_frequency_rank" property="searchFrequencyRank"/>
+                    <result column="date_range" property="dateRange"/>
+                    <result column="site" property="site"/>
+                    <result column="asin_clicked1" property="asinClicked1"/>
+                    <result column="asin_clicked2" property="asinClicked2"/>
+                    <result column="asin_clicked3" property="asinClicked3"/>
+                    <result column="click_share1" property="clickShare1"/>
+                    <result column="click_share2" property="clickShare2"/>
+                    <result column="click_share3" property="clickShare3"/>
+                    <result column="transform_share1" property="transformShare1"/>
+                    <result column="transform_share2" property="transformShare2"/>
+                    <result column="transform_share3" property="transformShare3"/>
+                    <result column="brand1" property="brand1"/>
+                    <result column="brand2" property="brand2"/>
+                    <result column="brand3" property="brand3"/>
+                    <result column="color1" property="color1"/>
+                    <result column="color2" property="color2"/>
+                    <result column="color3" property="color3"/>
+                    <result column="size1" property="size1"/>
+                    <result column="size2" property="size2"/>
+                    <result column="size3" property="size3"/>
+                    <result column="cn_word" property="cnWord"/>
+        </resultMap>
+
+        <!-- 通用查询结果列 -->
+        <sql id="Base_Column_List">
+            id, search_terms, search_frequency_rank, date_range, site, asin_clicked1, asin_clicked2, asin_clicked3, click_share1, click_share2, click_share3, transform_share1, transform_share2, transform_share3, brand1, brand2, brand3, color1, color2, color3, size1, size2, size3, cn_word
+        </sql>
+
+
+
+
+
+
+</mapper>
