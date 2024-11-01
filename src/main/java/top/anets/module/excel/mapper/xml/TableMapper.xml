@@ -13,6 +13,21 @@
        </select>
 
 
+    <select id="selectTableColumnInfo" resultType="top.anets.module.excel.model.ColumnInfo">
+        SELECT COLUMN_NAME as columnName,
+        DATA_TYPE as dataType,
+        CHARACTER_MAXIMUM_LENGTH AS length,
+        COLUMN_COMMENT as comment,
+        IS_NULLABLE AS isNullable,COLUMN_KEY as  columnKey
+        FROM information_schema.columns
+        WHERE table_name = #{tableName}
+        <if test="tableSchema != null">
+            and TABLE_SCHEMA = #{tableSchema}
+        </if>
+        ORDER BY ORDINAL_POSITION ASC
+    </select>
+
+
 
     <select id="countTable" resultType="java.lang.String">
         SELECT DISTINCT (TABLE_SCHEMA)

@@ -21,6 +21,7 @@ public class ReadMergeAsMapListener extends AnalysisEventListener<Map<Integer, O
     private final List<CellExtra> extraList = new ArrayList<CellExtra>();
     private final List<Map<Integer, Object>> headList = new ArrayList<Map<Integer, Object>>();
     private int headRowCount = 0;
+    private Integer dataStartRow = null;
     private Integer limitRow = null;
     private AtomicInteger countReaded =  new AtomicInteger(0);
 
@@ -28,7 +29,10 @@ public class ReadMergeAsMapListener extends AnalysisEventListener<Map<Integer, O
     public void invokeHead(Map<Integer, ReadCellData<?>> headMap, AnalysisContext context) {
         super.invokeHead(headMap, context);
 
-        HashMap<Integer, Object> map = new HashMap<>();
+
+
+        HashMap<Integer, Object> map = new LinkedHashMap<>();
+        map.put(-1,"line_number");
         for(Integer key : headMap.keySet()){
             ReadCellData cellData = headMap.get(key);
             String value = cellData.getStringValue();
@@ -43,11 +47,22 @@ public class ReadMergeAsMapListener extends AnalysisEventListener<Map<Integer, O
 
 
     public void invoke(Map<Integer, Object> data, AnalysisContext context) {
+
         if(limitRow!=null&&limitRow<=countReaded.get()){
             this.doAfterAllAnalysed(null);
             throw new ExcelAnalysisStopException("停止读取");
         }
-        dataList.add(data);
+
+        int rowIndex = context.readRowHolder().getRowIndex() + 1;
+        if(dataStartRow!=null&&dataStartRow>rowIndex){
+            return;
+        }
+
+        Map<Integer, Object> map = new LinkedHashMap<>();
+        map.put(-1,rowIndex);
+        map.putAll(data);
+        dataList.add(map);
+//        dataList.add(data);
         countReaded.incrementAndGet();
 
     }
@@ -64,7 +79,7 @@ public class ReadMergeAsMapListener extends AnalysisEventListener<Map<Integer, O
     public void doAfterAllAnalysed(AnalysisContext context) {
         System.out.println("read finish");
 //      合并表头
-        fillDataListByMerge(headList,extraList,0);
+//        fillDataListByMerge(headList,extraList,0);
         HashMap<Integer, LinkedHashSet<String>> setHashMap = new HashMap<>();
 //      合并值
         headList.forEach(item->{
@@ -73,7 +88,7 @@ public class ReadMergeAsMapListener extends AnalysisEventListener<Map<Integer, O
                 String value = (String) each.getValue();
                 if(value!=null){
 //                    去掉空格与换行
-                    value = value.replaceAll("\\s+", "");
+                    value = value.replaceAll("\\s+", "_");
                 }
                 LinkedHashSet<String> strings = setHashMap.get(key);
                 if(strings == null){

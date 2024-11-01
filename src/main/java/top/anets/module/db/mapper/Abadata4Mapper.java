@@ -1,6 +1,7 @@
 package top.anets.module.db.mapper;
 
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 import top.anets.module.db.entity.Abadata4;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
@@ -22,4 +23,9 @@ public interface Abadata4Mapper extends BaseMapper<Abadata4> {
 
     @Select("select max(id) from abadata4")
     Long getMaxId();
+
+    @Update("${sql}")
+    Integer excuteSql(@Param("sql") String sql);
+    @Select("${sql}")
+    List<Map<String, Object>> excuteSelect(@Param("sql")String sql);
 }

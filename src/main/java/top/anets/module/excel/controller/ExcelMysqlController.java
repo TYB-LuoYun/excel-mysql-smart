@@ -13,7 +13,9 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import top.anets.cache.MemoryCache;
 import top.anets.exception.ServiceException;
+import top.anets.module.excel.model.ColumnInfo;
 import top.anets.module.excel.service.IExcelMysqlService;
 import top.anets.module.excel.entity.ExcelMysql;
 import top.anets.module.excel.service.TableService;
@@ -31,6 +33,7 @@ import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 import javax.annotation.Resource;
 import javax.validation.constraints.NotNull;
@@ -59,6 +62,11 @@ public class ExcelMysqlController {
 
     @Resource
     private TableService tableService;
+
+
+
+    @Resource
+    private MemoryCache memoryCache;
 
     /**
      * 创建表
@@ -166,6 +174,14 @@ public class ExcelMysqlController {
         return jsonObject;
     }
 
+    /**
+     * 获取进度
+     */
+    @RequestMapping("getProcess")
+    public Object getProcess(String tableName){
+        return memoryCache.getCacheDay().getIfPresent(tableName);
+    }
+
 
     /**
      * 更新数据
@@ -173,7 +189,7 @@ public class ExcelMysqlController {
      */
     public ReentrantLock lock = new ReentrantLock();
     @RequestMapping("updateExcelTable")
-    public void updateExcelTable(MultipartFile file,Integer id,Integer sheetIndex,Integer excelHeadRowNum,String updateBy,@RequestPart(name = "fieldMap")  Map<String,String> fieldMap,@RequestPart(name = "keys")  Map<String,Long> keys,Integer mode) throws IOException {
+    public void updateExcelTable(MultipartFile file,Integer id,Integer sheetIndex,Integer excelHeadRowNum,Integer dataStartRowNum,String updateBy,@RequestPart(name = "fieldMap")  Map<String,String> fieldMap,@RequestPart(name = "keys")  Map<String,Long> keys,Integer mode,@RequestPart(name = "columnInfo") List<ColumnInfo> columnInfo ,@RequestPart(name = "custom")  Map<String,Object> custom) throws IOException {
         if(CollectionUtils.isEmpty(fieldMap)){
             throw new ServiceException("字段映射不能为空");
         }
@@ -183,15 +199,35 @@ public class ExcelMysqlController {
         }
         try{
             ExcelMysql byId = excelMysqlService.getById(id);
+            memoryCache.getCacheDay().put(byId.getTableName(),0);
+            List<ColumnInfo> columnInfos = tableService.selectTableColumnInfo(byId.getTableName(), null);
+            List<ColumnInfo> needConvert =  new ArrayList<>();
+
+            for (ColumnInfo each : columnInfo) {
+                boolean isDistinct = false;
+                for (ColumnInfo item : columnInfos) {
+                    if(item.getColumnName().equalsIgnoreCase(each.getColumnName())&& !item.getDataType().equals(each.getDataType())){
+                        isDistinct = true;
+                        break;
+                    }
+                }
+                if(isDistinct){
+                    needConvert.add(each);
+                }
+            }
+
             try {
                 if(mode==null||mode!=1){
                     tableService.deleteTableData(byId.getTableName());
                 }
+//              更改字段类型
+                tableService.updateColumnType(byId.getTableName(),needConvert);
 //              为了能加索引，最好先删除表
                 tableService.updatePK(keys,byId.getTableName());
+//              可能需要更改数据类型
             }catch (Exception e){
                 e.printStackTrace();
-                throw  new ServiceException("修改索引失败，可能数据存在索引不唯一，建议选用覆盖模式");
+                throw  new ServiceException("修改索引或者类型失败，建议选用覆盖模式");
             }
             if(sheetIndex == null){
                 sheetIndex = 0;
@@ -204,16 +240,36 @@ public class ExcelMysqlController {
                 throw new ServiceException(e.getMessage());
             }
 
+            memoryCache.getCacheDay().put(byId.getTableName(),0.05);
+
             if(excelHeadRowNum!=null){
                 byId.setExcelHeadRowNum(excelHeadRowNum);
+                if(dataStartRowNum == null || dataStartRowNum<=excelHeadRowNum){
+                    dataStartRowNum = excelHeadRowNum+1;
+                }
             }
-            tableService.updateExcelTable(file,byId.getTableName(),byId.getExcelHeadRowNum(),sheetIndex,fieldMap,mode);
+            if(dataStartRowNum !=null){
+                byId.setDataStartRowNum(dataStartRowNum);
+            }
+            /**
+             * 由于excel解析的都是字符串，菲字符串的要转换类型
+             */
+            List<ColumnInfo> notStringType =  new ArrayList<>();
+            List<ColumnInfo> columnInfoNew = tableService.selectTableColumnInfo(byId.getTableName(), null);
+            columnInfoNew.forEach(item->{
+                if(!"varchar".equalsIgnoreCase(item.getDataType())){
+                    notStringType.add(item);
+                }
+            });
+            memoryCache.getCacheDay().put(byId.getTableName(),0.06);
+            tableService.updateExcelTable(file,byId.getTableName(),byId.getExcelHeadRowNum(),byId.getDataStartRowNum(),sheetIndex,fieldMap,mode,notStringType,custom);
             byId.setUpdateTime(new Date());
             byId.setExcelName(file.getOriginalFilename());
             byId.setSheetIndex(sheetIndex);
             byId.setSheetName(sheet.getSheetName());
             byId.setUpdateBy(updateBy);
             excelMysqlService.saveOrUpdate(byId);
+            memoryCache.getCacheDay().put(byId.getTableName(),1);
         }catch (Exception e){
             e.printStackTrace();
             throw new ServiceException(e.getMessage());
@@ -254,7 +310,7 @@ public class ExcelMysqlController {
      * @return
      */
     @RequestMapping("getFieldMap")
-    public Object getFieldMap(MultipartFile file , @NotNull Integer id, @NotNull  Integer sheetIndex,Integer excelHeadRowNum)  {
+    public Object getFieldMap(MultipartFile file , @NotNull Integer id, @NotNull  Integer sheetIndex,Integer excelHeadRowNum,Integer dataStartRowNum)  {
         ExcelMysql byId = excelMysqlService.getById(id);
         Map<Integer, String> headDataMap = null;
         /**
@@ -265,6 +321,14 @@ public class ExcelMysqlController {
         if(excelHeadRowNum == null){
             excelHeadRowNum = byId.getExcelHeadRowNum();
         }
+        if(dataStartRowNum == null){
+            dataStartRowNum = byId.getDataStartRowNum();
+        }
+        if(excelHeadRowNum!=null){
+            if(dataStartRowNum == null || dataStartRowNum<=excelHeadRowNum){
+                dataStartRowNum = excelHeadRowNum+1;
+            }
+        }
         readMergeAsMapListener.setLimitRow(excelHeadRowNum);
         ZipSecureFile.setMaxFileCount(20000);
         try(InputStream in = file.getInputStream()){
@@ -274,20 +338,22 @@ public class ExcelMysqlController {
             e.printStackTrace();
             throw new ServiceException(e.getMessage());
         }
-//      获取表的所有字段
-        List<String> list = tableService.selectTableColumn(byId.getTableName(), null);
+//      获取表的所有字段信息
+        List<ColumnInfo> list2 = tableService.selectTableColumnInfo(byId.getTableName(), null);
+        List<String> list =tableService.selectTableColumn(byId.getTableName(),null);
         LinkedHashMap<String, String> linkedHashMap = new LinkedHashMap<>();
         for(Map.Entry<Integer,String> item : headDataMap.entrySet()){
             String value = item.getValue();
             AtomicReference<String> matchValue = new AtomicReference<>();
 //          精确匹配
             if(list.contains(value)){
+//              计算相似度
                 matchValue.set(value);
             }
 //          模糊匹配
             if(matchValue.get() ==null){
                 list.forEach(e->{
-                    if(e.contains(value) || (value!=null && value.contains(e))){
+                    if(matchValue.get() == null && (e.contains(value) || (value!=null && value.contains(e)))){
                         matchValue.set(e);
                     }
                 });
@@ -300,12 +366,110 @@ public class ExcelMysqlController {
         }
         JSONObject object = new JSONObject();
         object.put("columns",list);
+        object.put("columnInfo",list2);
         object.put("fieldMap",linkedHashMap);
         object.put("tableName",byId.getTableName());
         object.put("excelHeadRowNum",excelHeadRowNum);
+        object.put("dataStartRowNum",dataStartRowNum );
         object.put("keys",keys);
+        object.put("dataTypes",Arrays.asList("varchar","int","decimal","datetime","date","double","bigint","text"));
         return object;
     }
+
+
+
+    @RequestMapping("getFieldMaps")
+    public Object getFieldMaps(MultipartFile file , @NotNull Integer id, @NotNull  Integer sheetIndex,Integer excelHeadRowNum,Integer dataStartRowNum)  {
+        ExcelMysql byId = excelMysqlService.getById(id);
+        Map<Integer, String> headDataMap = null;
+        /**
+         * 查看表主键
+         */
+        Map<String,Long> keys =tableService.listPK(byId.getTableName());
+        ReadMergeAsMapListener readMergeAsMapListener = new ReadMergeAsMapListener();
+        if(excelHeadRowNum == null){
+            excelHeadRowNum = byId.getExcelHeadRowNum();
+        }
+        if(dataStartRowNum == null){
+            dataStartRowNum = byId.getDataStartRowNum();
+        }
+        if(excelHeadRowNum!=null){
+            if(dataStartRowNum == null || dataStartRowNum<=excelHeadRowNum){
+                dataStartRowNum = excelHeadRowNum+1;
+            }
+        }
+        readMergeAsMapListener.setLimitRow(excelHeadRowNum);
+        ZipSecureFile.setMaxFileCount(20000);
+        try(InputStream in = file.getInputStream()){
+            EasyExcel.read(in).extraRead(CellExtraTypeEnum.MERGE).registerReadListener(readMergeAsMapListener).sheet(sheetIndex).headRowNumber(excelHeadRowNum).doRead();
+            headDataMap = readMergeAsMapListener.getHeadDataMap();
+        }catch (Exception e){
+            e.printStackTrace();
+            throw new ServiceException(e.getMessage());
+        }
+//      获取表的所有字段信息
+        List<ColumnInfo> list2 = tableService.selectTableColumnInfo(byId.getTableName(), null);
+        List<String> list = tableService.selectTableColumn(byId.getTableName(),null);
+        LinkedHashMap<String, String> linkedHashMap = new LinkedHashMap<>();
+        Collection<String> values = headDataMap.values();
+        for( ColumnInfo  item : list2){
+            String value = item.getColumnName();
+            AtomicReference<String> matchValue = new AtomicReference<>();
+//          精确匹配
+            if(values.contains(value)){
+//              计算相似度
+                matchValue.set(value);
+            }
+//          模糊匹配
+            if(matchValue.get() ==null){
+                values.forEach(e->{
+                    if(matchValue.get() == null && (e.contains(value) || (value!=null && value.contains(e)))){
+                        matchValue.set(e);
+                    }
+                });
+            }
+            if(matchValue.get() !=null){
+                linkedHashMap.put(matchValue.get(),value);
+            }else{
+                if(value.equalsIgnoreCase("$dates")){
+                    linkedHashMap.put("$dates",value);
+                }else if(value.equalsIgnoreCase("$update_time")){
+                    linkedHashMap.put("$update_time",value);
+                }else{
+                    linkedHashMap.put("",value);
+                }
+            }
+        }
+        JSONObject object = new JSONObject();
+        object.put("columns",list);
+        object.put("columnInfo",list2);
+        object.put("columnExcel",values);
+
+
+        LinkedHashMap<String, String> newMap = new LinkedHashMap<>();
+        if (linkedHashMap.containsKey("$dates")) {
+            newMap.put("$dates", linkedHashMap.remove("$dates"));
+        }
+        if(linkedHashMap.containsValue("$update_time")){
+            linkedHashMap.remove("$update_time");
+        }
+        linkedHashMap.forEach(newMap::put);  // 将剩余元素加入新map
+        linkedHashMap.clear();               // 清空原map
+//        linkedHashMap.putAll(newMap);        // 复制回原map
+
+        object.put("fieldMap",newMap);
+        object.put("tableName",byId.getTableName());
+        object.put("excelHeadRowNum",excelHeadRowNum);
+        object.put("dataStartRowNum",dataStartRowNum );
+        object.put("keys",keys);
+        HashMap<String, Object> map = new HashMap<>();
+        map.put("$dates",null);
+        object.put("custom",map);
+        object.put("dataTypes",Arrays.asList("varchar","int","decimal","datetime","date","double","bigint","text"));
+        return object;
+    }
+
+
 
     @ApiOperation(value = "Id查询")
     @GetMapping("/detail/{id}")
@@ -320,7 +484,7 @@ public class ExcelMysqlController {
         IPage  pages = excelMysqlService.page(query.Page(),WrapperQuery.query(excelMysqlVo));
         WrapperQuery.ipage(pages,ExcelMysqlVo.class).getRecords().forEach(item->{
         //         todo    item.get...
-
+ 
         });
         return pages;
     }

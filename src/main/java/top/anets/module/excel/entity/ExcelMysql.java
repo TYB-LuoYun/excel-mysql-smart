@@ -39,6 +39,9 @@ public class ExcelMysql implements Serializable {
     @ApiModelProperty(value = "表格行数")
     private Integer excelHeadRowNum;
 
+
+    Integer dataStartRowNum;
+
     private String sheetName;
 
     private Integer sheetIndex;
